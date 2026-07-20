@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Security Quality Gate for SAST (semgrep) findings.
 
+起司模型 · 第 2 層：CI 層的最後一關（Quality Gate）
+這支腳本本身不掃描任何東西，它是 CI 層 pipeline 的「判官」：讀
+semgrep 已經產生的 JSON 報告，決定這次的 finding 組合該不該擋下
+部署。掃描（找問題）跟守門（決定要不要擋）是兩個獨立步驟，拆開來
+才能在不重新掃描的情況下調整「擋不擋」的政策。
+
 Reads a semgrep --json report and decides whether the finding set should
 block the pipeline or merely warn. The decision uses semgrep's own
 rule-assigned `extra.severity` field (ERROR / WARNING / INFO) -- that
@@ -19,7 +25,12 @@ import json
 import os
 import sys
 
-# 這就是投影片「SECURITY QUALITY GATE」講的那個規則：擋不擋部署，只看這一個 set。
+# ═══════════════════════════════════════════════════════
+# 判斷規則：這就是投影片「SECURITY QUALITY GATE」講的那個規則。
+# ERROR 等級 -> 放進這個 set，擋部署（exit 1）。
+# WARNING / INFO -> 不在這個 set 裡，只警告、照樣放行（exit 0）。
+# 要調整「多嚴格才擋」，只需要改這一行，不用動下面的分類/輸出邏輯。
+# ═══════════════════════════════════════════════════════
 BLOCKING_SEVERITIES = {"ERROR"}
 
 RESET = "\033[0m"
@@ -34,6 +45,9 @@ def load_findings(report_path):
     return report.get("results", [])
 
 
+# ─────────────────────────────────────────────
+# 分類邏輯：把 semgrep 吐出的每一筆 finding 二分成「擋部署」或「只警告」
+# ─────────────────────────────────────────────
 def classify(findings):
     # 投影片「SECURITY QUALITY GATE」的核心邏輯：每個 finding 只依 severity 二分，
     # 落在 BLOCKING_SEVERITIES 裡的擋部署，其餘全部只當警告放行。
@@ -47,6 +61,10 @@ def classify(findings):
     return blocking, advisory
 
 
+# ─────────────────────────────────────────────
+# 輸出：把分類結果變成人看得懂的東西——console 顏色、GitHub Actions
+# annotation（PR 上直接標紅/黃）、還有 job summary 頁面的表格。
+# ─────────────────────────────────────────────
 def describe(finding):
     path = finding.get("path", "?")
     line = finding.get("start", {}).get("line", "?")
@@ -90,6 +108,10 @@ def write_step_summary(blocking, advisory):
             f.write("No SAST findings.\n")
 
 
+# ─────────────────────────────────────────────
+# 入口：串起「讀報告 -> 分類 -> 輸出 -> 依結果決定 exit code」，
+# exit code 就是 GitHub Actions 用來判斷這個 job 該不該算失敗的依據。
+# ─────────────────────────────────────────────
 def main():
     if len(sys.argv) != 2:
         print("usage: security_gate.py <semgrep-json-report>", file=sys.stderr)
