@@ -39,11 +39,8 @@ jobs:
         run: |
           pip install semgrep
           semgrep --config=p/python --config=p/owasp-top-ten --json --output=semgrep-report.json . || true
-
       # 修正 5：【STEP 2-3】Quality Gate 獨立一步，執行安全判定腳本
       - name: Quality Gate - Run security gate script
         run: python3 scripts/security_gate.py semgrep-report.json
-
       - name: Run tests
         run: pytest tests/ -v
-    continue-on-error:true
